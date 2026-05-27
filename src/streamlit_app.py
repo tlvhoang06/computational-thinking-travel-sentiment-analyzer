@@ -6,6 +6,7 @@ Provides comprehensive analysis of travel reviews including sentiment, aspects, 
 
 import streamlit as st
 from models import (
+    set_hf_token,
     analyze_sentiment,
     detect_topics,
     analyze_aspect_sentiment
@@ -35,6 +36,25 @@ Discover sentiment, identify aspects, and detect topics in travel feedback.
 st.sidebar.title("Settings")
 st.sidebar.markdown("---")
 
+# Hugging Face Token Input (at the top of sidebar)
+st.sidebar.subheader("🔑 Hugging Face API Configuration")
+hf_token = st.sidebar.text_input(
+    "Enter your Hugging Face API Token:",
+    type="password",
+    help="Get your token from https://huggingface.co/settings/tokens"
+)
+
+if hf_token:
+    try:
+        set_hf_token(hf_token)
+        st.sidebar.success("✓ Token set successfully!")
+    except ValueError as e:
+        st.sidebar.error(f"Error: {str(e)}")
+else:
+    st.sidebar.warning("⚠️ Please enter your Hugging Face API token to proceed")
+
+st.sidebar.markdown("---")
+
 # Define travel aspects
 travel_aspects = [
     "cleanliness",
@@ -59,11 +79,17 @@ selected_aspects = st.sidebar.multiselect(
 st.sidebar.markdown("---")
 st.sidebar.info(
     "**About MyTravelHelper:**\n\n"
-    "This tool uses advanced NLP models to:\n"
+    "This tool uses Hugging Face Inference API to:\n"
     "- Analyze overall sentiment\n"
     "- Detect specific aspects mentioned\n"
     "- Identify sentiment for each aspect\n"
-    "- Extract key topics"
+    "- Extract key topics\n\n"
+    "**Get HF Token:**\n"
+    "1. Visit huggingface.co\n"
+    "2. Sign up/Login\n"
+    "3. Go to Settings > Tokens\n"
+    "4. Create new token\n"
+    "5. Copy and paste here"
 )
 
 # Main interface
@@ -88,7 +114,11 @@ if clear_button:
     st.rerun()
 
 if analyze_button:
-    if user_review.strip():
+    if not hf_token:
+        st.error("❌ Please enter your Hugging Face API token in the sidebar first!")
+    elif not user_review.strip():
+        st.warning("⚠️ Please enter a review or query.")
+    else:
         # Clean the text
         cleaned_review = clean_text(user_review)
         
@@ -276,5 +306,3 @@ if analyze_button:
             with col2:
                 st.write("**Cleaned Review:**")
                 st.text(cleaned_review)
-    else:
-        st.warning("⚠️ Please enter a travel review to analyze.")

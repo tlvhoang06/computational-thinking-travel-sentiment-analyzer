@@ -1,7 +1,6 @@
 streamlit
-transformers
-torchvision
-torch
+huggingface-hub
+requests
 numpy
 scipy
 scikit-learn

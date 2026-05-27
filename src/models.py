@@ -1,132 +1,209 @@
 # src/models.py
 """
-This module contains model loading and inference logic for MyTravelHelper.
-Includes sentiment analysis, topic detection, and aspect-based analysis.
+This module contains model inference logic for MyTravelHelper.
+Uses Hugging Face Inference API (no local model downloads needed).
+Requires HF_TOKEN environment variable or token parameter.
 """
-from transformers import pipeline
+from huggingface_hub import InferenceClient
 
-# Cache for pipelines to avoid reloading
-_sentiment_pipeline = None
-_topic_pipeline = None
-_zero_shot_pipeline = None
+# Global client (will be initialized with token in Streamlit app)
+_client = None
 
-def get_sentiment_pipeline(model_name="distilbert-base-uncased-finetuned-sst-2-english"):
+def set_hf_token(token):
     """
-    Load sentiment analysis pipeline.
-    Uses DistilBERT fine-tuned on SST-2 for sentiment classification.
-    Returns: pipeline object
+    Set Hugging Face token for API access.
+    Call this once at the beginning of your app.
+    
+    Args:
+        token (str): Your Hugging Face API token
+        
+    Raises:
+        ValueError: If token is empty
     """
-    global _sentiment_pipeline
-    if _sentiment_pipeline is None:
-        _sentiment_pipeline = pipeline("sentiment-analysis", model=model_name)
-    return _sentiment_pipeline
+    global _client
+    if not token or not token.strip():
+        raise ValueError("HF token cannot be empty!")
+    _client = InferenceClient(api_key=token)
 
-def get_zero_shot_pipeline(model_name="facebook/bart-large-mnli"):
+def get_hf_client():
     """
-    Load zero-shot classification pipeline for topic detection.
-    Uses BART model for flexible topic classification.
-    Returns: pipeline object
+    Get the current Hugging Face Inference client.
+    Raises error if token not set.
+    
+    Returns:
+        InferenceClient: The Hugging Face client
+        
+    Raises:
+        ValueError: If token not set
     """
-    global _zero_shot_pipeline
-    if _zero_shot_pipeline is None:
-        _zero_shot_pipeline = pipeline("zero-shot-classification", model=model_name)
-    return _zero_shot_pipeline
+    if _client is None:
+        raise ValueError("HF token not set! Enter your Hugging Face token in the sidebar.")
+    return _client
 
-def analyze_sentiment(text, pipeline_obj=None):
+def analyze_sentiment(text):
     """
-    Analyze sentiment of given text.
+    Analyze sentiment of given text using Hugging Face Inference API.
+    Uses zero-shot classification with BART model.
     
     Args:
         text (str): Input text to analyze
-        pipeline_obj: Optional pipeline object (if None, will load)
     
     Returns:
         dict: Sentiment analysis result with label and score
     """
-    if pipeline_obj is None:
-        pipeline_obj = get_sentiment_pipeline()
-    
     try:
-        result = pipeline_obj(text, truncation=True)
+        client = get_hf_client()
+        
+        # Truncate to 512 tokens (API limit)
+        text_truncated = text[:512] if len(text) > 512 else text
+        
+        # Use zero-shot classification for sentiment with BART model
+        result = client.zero_shot_classification(
+            text=text_truncated,
+            candidate_labels=["positive", "negative"],
+            model="facebook/bart-large-mnli"
+        )
+        
+        # Handle different response formats
+        if isinstance(result, list) and len(result) > 0:
+            result = result[0]
+        
+        # Extract labels and scores
+        labels = result.get("labels") or result.get("label")
+        scores = result.get("scores") or result.get("score")
+        
+        if not labels or not scores:
+            return {"error": "Invalid response format from API"}
+        
+        # Ensure they're lists
+        if not isinstance(labels, list):
+            labels = [labels]
+        if not isinstance(scores, list):
+            scores = [scores]
+        
+        if len(labels) == 0 or len(scores) == 0:
+            return {"error": "No results from sentiment analysis"}
+        
+        # Find label with highest score (don't assume order!)
+        label_score_pairs = list(zip(labels, scores))
+        top_label, top_score = max(label_score_pairs, key=lambda x: float(x[1]))
+        top_score_float = float(top_score)
+        
         return {
-            "label": result[0]["label"],
-            "score": round(result[0]["score"], 4),
-            "confidence": "High" if result[0]["score"] > 0.9 else "Medium" if result[0]["score"] > 0.7 else "Low"
+            "label": top_label.upper() if isinstance(top_label, str) else "POSITIVE",
+            "score": round(top_score_float, 4),
+            "confidence": "High" if top_score_float > 0.9 else "Medium" if top_score_float > 0.7 else "Low"
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Sentiment analysis failed: {str(e)}"}
 
-def detect_topics(text, topics, pipeline_obj=None):
+def detect_topics(text, topics):
     """
     Detect topics in text using zero-shot classification.
     
     Args:
         text (str): Input text
         topics (list): List of candidate topics
-        pipeline_obj: Optional pipeline object
     
     Returns:
         dict: Topic detection results with scores
     """
-    if pipeline_obj is None:
-        pipeline_obj = get_zero_shot_pipeline()
-    
     try:
-        result = pipeline_obj(text, topics, multi_class=True)
+        client = get_hf_client()
+        model = "facebook/bart-large-mnli"
+        
+        # Truncate to 512 tokens
+        text_truncated = text[:512] if len(text) > 512 else text
+        
+        result = client.zero_shot_classification(
+            text=text_truncated,
+            candidate_labels=topics,
+            model=model
+        )
+        
+        # Handle different response formats
+        if isinstance(result, list) and len(result) > 0:
+            result = result[0]
+        
+        # Extract labels and scores
+        labels = result.get("labels") or result.get("label")
+        scores = result.get("scores") or result.get("score")
+        
+        if not labels or not scores:
+            return {"error": "Invalid response format from API"}
+        
+        # Ensure they're lists
+        if not isinstance(labels, list):
+            labels = [labels]
+        if not isinstance(scores, list):
+            scores = [scores]
+        
         return {
-            "topics": result["labels"],
-            "scores": [round(score, 4) for score in result["scores"]],
-            "top_topic": result["labels"][0] if result["labels"] else None
+            "topics": labels,
+            "scores": [round(float(s), 4) for s in scores],
+            "top_topic": labels[0] if len(labels) > 0 else None
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Topic detection failed: {str(e)}"}
 
-def analyze_aspect_sentiment(text, aspects, sentiment_pipeline_obj=None, topic_pipeline_obj=None):
+def analyze_aspect_sentiment(text, aspects):
     """
     Analyze sentiment for each aspect mentioned in text.
+    Splits text by conjunctions (but, and, however) to analyze aspect-specific clauses.
     
     Args:
         text (str): Input review text
         aspects (list): List of aspects to check
-        sentiment_pipeline_obj: Optional sentiment pipeline
-        topic_pipeline_obj: Optional topic pipeline
     
     Returns:
         dict: Aspect-based sentiment analysis
     """
-    sentiment_pipe = sentiment_pipeline_obj or get_sentiment_pipeline()
-    topic_pipe = topic_pipeline_obj or get_zero_shot_pipeline()
+    import re
     
     results = {}
     
+    # Split by conjunctions to isolate independent clauses
+    clauses = re.split(
+        r'\b(but|and|however|yet|though|although|while|since|because)\b',
+        text,
+        flags=re.IGNORECASE
+    )
+    
+    # Filter to get only the actual clause text (remove conjunctions)
+    clauses = [c.strip() for c in clauses if c.strip() and not re.match(r'\b(but|and|however|yet|though|although|while|since|because)\b', c, re.IGNORECASE)]
+    
     for aspect in aspects:
         aspect_lower = aspect.lower()
-        # Check if aspect is mentioned in text
-        if aspect_lower in text.lower():
-            # Extract sentences mentioning this aspect
-            sentences = text.split(". ")
-            aspect_sentences = [s for s in sentences if aspect_lower in s.lower()]
-            
-            if aspect_sentences:
-                # Analyze sentiment for each sentence mentioning the aspect
-                sentiments = []
-                for sentence in aspect_sentences:
-                    try:
-                        sent = analyze_sentiment(sentence, sentiment_pipe)
+        
+        # Find clauses mentioning this aspect
+        relevant_clauses = [c for c in clauses if aspect_lower in c.lower()]
+        
+        if relevant_clauses:
+            sentiments = []
+            for clause in relevant_clauses:
+                try:
+                    sent = analyze_sentiment(clause)
+                    if "error" not in sent:
                         sentiments.append(sent)
-                    except:
-                        pass
+                except:
+                    pass
+            
+            if sentiments:
+                # Average the sentiment scores
+                avg_score = sum(float(s["score"]) for s in sentiments) / len(sentiments)
+                # Use majority sentiment label
+                labels_count = {}
+                for s in sentiments:
+                    label = s["label"]
+                    labels_count[label] = labels_count.get(label, 0) + 1
+                avg_label = max(labels_count, key=labels_count.get)
                 
-                if sentiments:
-                    avg_score = sum(s["score"] for s in sentiments if "score" in s) / len(sentiments)
-                    avg_label = sentiments[0]["label"] if sentiments else "NEUTRAL"
-                    
-                    results[aspect] = {
-                        "mentioned": True,
-                        "sentiment": avg_label,
-                        "confidence_score": round(avg_score, 4),
-                        "instances": len(sentiments)
-                    }
+                results[aspect] = {
+                    "mentioned": True,
+                    "sentiment": avg_label,
+                    "confidence_score": round(avg_score, 4),
+                    "instances": len(sentiments)
+                }
                 continue
         
         results[aspect] = {
