@@ -41,24 +41,34 @@ MyTravelHelper is an intelligent application for analyzing travel reviews using 
 │   └── test_env.py            # Environment testing script
 ```
 
-## Installation
+## Installation & Setup
 
 ### Prerequisites
 - Python 3.8 or higher
 - pip package manager
-- Internet connection (for downloading models)
-- At least 4GB free disk space
+- **Hugging Face API Token** (free, no credit card needed)
+- Internet connection
+
+### Get Hugging Face API Token
+
+1. Visit [huggingface.co](https://huggingface.co)
+2. Sign up or log in to your account
+3. Go to **Settings > Tokens** (https://huggingface.co/settings/tokens)
+4. Click **"New token"**
+5. Select type: **"Read"**
+6. Click **"Generate"** and copy your token
+7. Save it safely (you'll need it to run the app)
 
 ### Step 1: Create Virtual Environment (Recommended)
 
 ```bash
 # Windows
-python -m venv myenv
-myenv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 
 # macOS/Linux
-python3 -m venv myenv
-source myenv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
 ### Step 2: Install Dependencies
@@ -67,52 +77,69 @@ source myenv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 3: Verify Installation
-
-```bash
-python src/test_env.py
-```
-
-## Usage
-
-### Running the Application
+### Step 3: Run the Application
 
 ```bash
 streamlit run src/streamlit_app.py
 ```
 
-The application will open at `http://localhost:8501`
+The app will open at `http://localhost:8501`
 
-### Using the Web Interface
+### Step 4: Enter Your Hugging Face Token
 
-1. **Input Section**: Paste your travel review in the text area
-2. **Select Aspects**: Choose which aspects to analyze from the sidebar
-3. **Analyze**: Click the "Analyze Review" button
-4. **View Results**: See results in different tabs:
-   - **Overall Sentiment**: Primary sentiment and confidence
-   - **Aspect-Based Analysis**: Sentiment for each aspect
-   - **Topic Detection**: Main topics mentioned
-   - **Text Statistics**: Review statistics
+1. In the Streamlit sidebar, you'll see **"Enter your Hugging Face API Token"**
+2. Paste your token there (it's a password field, won't be displayed)
+3. You'll see ✓ Token set successfully!
+4. Now you can analyze reviews
 
-## Models Used
+## How It Works
 
-### 1. Sentiment Analysis
-- **Model**: `distilbert-base-uncased-finetuned-sst-2-english`
-- **Architecture**: DistilBERT (distilled BERT)
-- **Advantages**:
-  - 6x faster than BERT
-  - 40% smaller than BERT
-  - Retains 97% of BERT's performance
-  - Ideal for real-time applications
+### Architecture
 
-### 2. Topic Detection
+```
+User Input (Review)
+       ↓
+[Streamlit App] (src/streamlit_app.py)
+       ↓
+[Models Module] (src/models.py)
+       ├─→ Hugging Face API (Sentiment Analysis)
+       ├─→ Hugging Face API (Topic Detection)
+       └─→ Hugging Face API (Aspect Sentiment)
+       ↓
+[Utilities Module] (src/utils.py)
+       ├─→ Text Preprocessing
+       ├─→ Text Statistics
+       └─→ Aspect Extraction
+       ↓
+Results Display (Streamlit Tabs)
+```
+
+### Models Used (via Hugging Face Inference API)
+
+**1. Sentiment Analysis**
 - **Model**: `facebook/bart-large-mnli`
-- **Architecture**: BART (Bidirectional Autoregressive Transformer)
-- **Type**: Zero-shot classification
-- **Advantages**:
-  - Works without retraining
-  - Flexible topic definition
-  - Handles multiple topics simultaneously
+- **Method**: Zero-shot classification
+- **Labels**: ["positive", "negative"]
+- **Why**: Reliable, supports any custom labels, API-friendly
+
+**2. Topic Detection**
+- **Model**: `facebook/bart-large-mnli`
+- **Method**: Zero-shot classification
+- **Type**: Flexible topic definition (user-provided topics)
+- **Why**: No retraining needed, works with custom topics
+
+**3. Aspect Sentiment Analysis**
+- **Model**: `facebook/bart-large-mnli`
+- **Method**: Splits text by conjunctions (but, and, however, etc.)
+- **Processing**: Analyzes each aspect independently
+- **Accuracy**: High because it isolates aspect-specific clauses
+
+### Key Improvements in This Version
+
+✅ **No Local Model Downloads** - Uses Hugging Face Inference API instead  
+✅ **Clause-Based Analysis** - Splits "A is good BUT B is bad" correctly  
+✅ **Smart Label Detection** - Finds highest-scoring label, not position-based  
+✅ **Better Aspect Handling** - Analyzes only the clause mentioning the aspect
 
 ## Core Modules
 
@@ -149,127 +176,126 @@ Comprehensive testing script:
 
 ## Advanced Features Explained
 
+## Advanced Features Explained
+
 ### Advanced Feature 1: Aspect-Based Sentiment Analysis
 
 **What it does:**
-- Analyzes sentiment not just for the whole review, but for specific aspects
-- Identifies which aspects customers praise and which need improvement
+- Analyzes sentiment for specific aspects mentioned in reviews
+- Handles complex sentences by splitting on conjunctions
+- Returns sentiment for each aspect independently
 
-**Algorithm:**
-1. For each aspect, check if it's mentioned in the review
-2. Extract all sentences mentioning that aspect
-3. Analyze sentiment of each sentence
-4. Aggregate sentiment scores to get aspect-level sentiment
-5. Return results with confidence scores
+**Smart Processing:**
+- Splits sentences by: "but", "and", "however", "yet", "though", "although", "while", "since", "because"
+- Analyzes only the clause mentioning the aspect
+- Prevents false negatives (e.g., "service is perfect BUT location is bad")
 
 **Example:**
 ```
-Review: "The hotel is clean but the staff was rude and the food was good."
+Input: "The service is perfect, but the location is too far from the city"
 
 Results:
-- Cleanliness: POSITIVE (100%)
-- Staff: NEGATIVE (100%)
-- Food: POSITIVE (100%)
+- SERVICE: POSITIVE (100%) ✓
+- LOCATION: NEGATIVE (100%) ✓
 ```
 
 **Use Cases:**
-- Hotel management can identify specific areas to improve
-- Managers know exactly what training is needed
-- Marketing can highlight positive aspects
-- Competitive analysis based on specific features
+- Hotel management identifies specific areas to improve
+- Marketing highlights positive aspects
+- Competitive analysis based on features
+- Training focus areas for staff
 
 ### Advanced Feature 2: Topic Detection
 
 **What it does:**
-- Identifies main topics/themes discussed in reviews
-- Uses zero-shot classification (no retraining needed)
-- Assigns confidence scores to each detected topic
+- Identifies main topics/themes in reviews
+- No retraining needed (zero-shot)
+- Assigns confidence scores to each topic
 
-**Algorithm:**
-1. Receives review text and candidate topics
-2. Converts to entailment problem: "This sentence is about {topic}"
-3. Computes entailment probability for each topic
-4. Returns ranked list of topics by probability
-5. Supports multi-class (multiple topics can co-occur)
+**How It Works:**
+1. Takes review text and list of candidate topics
+2. Uses zero-shot classification (BART model)
+3. Returns topics ranked by probability
+4. Supports multiple topics per review
 
 **Example:**
 ```
-Review: "Amazing location near beach! Perfect for vacation."
+Input: "Amazing location near beach! Perfect for vacation."
+Topics: [location, amenities, price, service, food]
 
-Detected Topics:
-- Location: 95%
-- Attractions: 70%
-- Value: 40%
+Results:
+- location: 95%
+- amenities: 65%
+- price: 35%
 ```
 
 **Use Cases:**
-- Automatically categorize reviews by topic
-- Identify trending topics in customer feedback
-- Generate FAQs based on frequent topics
-- Monitor quality by tracking which topics are discussed
+- Categorize reviews by topic automatically
+- Track trending topics in feedback
+- Generate FAQs from frequent topics
+- Quality monitoring by topic
 - Competitive analysis
 
 ## Performance
 
-- **Inference Speed**: ~2-3 seconds per review (GPU) / ~5 seconds (CPU)
-- **Model Sizes**:
-  - DistilBERT: ~268MB
-  - BART-Large: ~1.6GB
-- **Accuracy**: ~90% for sentiment, ~85-90% for topic detection
+- **Inference Speed**: ~2-3 seconds per review (depends on review length & API load)
+- **Requirements**: Internet connection only (no local storage needed)
+- **Accuracy**: ~85-90% for sentiment and topic detection
+- **Models**: BART-large-mnli (accessed via Hugging Face Inference API)
 
 ## Troubleshooting
 
-### Issue: Models not downloading
-**Solution**: Check internet connection and disk space. Models download automatically on first use.
-
-### Issue: Out of memory
-**Solution**: Use smaller models or increase available RAM
-
-### Issue: Slow inference
-**Solution**: Models are slower on CPU. Consider using GPU or accept slower speed.
+| Issue | Solution |
+|-------|----------|
+| **"Token not set" error** | Paste your HF token in the sidebar first |
+| **"Bad request: Model not supported"** | Your token may not have API access; regenerate token on huggingface.co |
+| **Slow response** | HF API may be rate-limited; wait a moment and retry |
+| **"Invalid response format"** | Try again; may be a temporary API issue |
 
 ## Future Enhancements
 
 - Multi-language support (French, Spanish, Vietnamese, etc.)
 - Batch processing for multiple reviews
 - Data export to CSV/JSON
-- Database integration for historical analysis
+- Database integration for trend analysis
 - RESTful API for system integration
-- Dashboard with trend analysis
-- Fine-tuned models for travel domain
-- Question answering from reviews
+- Custom fine-tuned models for travel domain
 - Named entity recognition (hotel names, locations)
+- Comparative analysis across hotels/locations
+- Visualization dashboard
 
 ## Dependencies
 
 See `requirements.txt` for complete list:
-- streamlit: Web interface framework
-- transformers: Hugging Face NLP models
-- torch: PyTorch deep learning library
-- numpy: Numerical computing
-- scipy: Scientific computing
-- scikit-learn: Machine learning utilities
+- **streamlit**: Web interface framework
+- **huggingface-hub**: Hugging Face Inference API client
+- **requests**: HTTP requests
+- **numpy, scipy, scikit-learn**: Data processing utilities
 
 ## References
 
+### Models
+- [facebook/bart-large-mnli](https://huggingface.co/facebook/bart-large-mnli) - Zero-shot classification via Hugging Face
+- [Hugging Face Inference API](https://huggingface.co/docs/api-inference/)
+
 ### Papers
-- DistilBERT: Sanh et al., "DistilBERT, a distilled version of BERT" (2019)
 - BART: Lewis et al., "BART: Denoising Sequence-to-Sequence Pre-training" (2019)
 - Zero-shot Classification: Yin et al., "Exploring the Limits of Transfer Learning" (2019)
 
 ### Resources
-- [Hugging Face Models](https://huggingface.co/models)
-- [Transformers Documentation](https://huggingface.co/docs/transformers/)
-- [Streamlit Documentation](https://docs.streamlit.io/)
-- [PyTorch Documentation](https://pytorch.org/)
+- [Hugging Face](https://huggingface.co/)
+- [Streamlit](https://docs.streamlit.io/)
+- [Python Regex](https://docs.python.org/3/library/re.html)
 
 ## License
 
-Educational project for assignment completion.
+Educational assignment project - MyTravelHelper
 
 ## Author
 
-Student ID: 24120056
+**Student ID**: 24120056  
+**Course**: Advanced NLP & Web Development  
+**Date**: May 2026
 
 ## Notes
 
