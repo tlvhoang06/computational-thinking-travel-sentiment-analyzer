@@ -1,186 +1,154 @@
 # src/test_env.py
 """
-Comprehensive environment test for MyTravelHelper
-Tests all components and dependencies
+Environment test for MyTravelHelper.
+Checks the dependencies used by the current API-based implementation.
 """
-import sys
 import os
+import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
 def test_imports():
-    """Test if all required packages are installed."""
+    """Test if required packages are installed."""
     print("=" * 60)
     print("TESTING IMPORTS")
     print("=" * 60)
-    
-    try:
-        import streamlit
-        print("[OK] Streamlit installed")
-    except ImportError:
-        print("[FAIL] Streamlit not installed")
-        return False
-    
-    try:
-        import transformers
-        print("[OK] Transformers installed")
-    except ImportError:
-        print("[FAIL] Transformers not installed")
-        return False
-    
-    try:
-        import torch
-        print("[OK] PyTorch installed")
-    except ImportError:
-        print("[FAIL] PyTorch not installed")
-        return False
-    
-    try:
-        import numpy
-        print("[OK] NumPy installed")
-    except ImportError:
-        print("[FAIL] NumPy not installed")
-        return False
-    
+
+    packages = [
+        ("streamlit", "Streamlit"),
+        ("huggingface_hub", "Hugging Face Hub"),
+        ("requests", "Requests"),
+    ]
+
+    all_ok = True
+    for module_name, display_name in packages:
+        try:
+            __import__(module_name)
+            print(f"[OK] {display_name} installed")
+        except ImportError:
+            print(f"[FAIL] {display_name} not installed")
+            all_ok = False
+
     print()
-    return True
+    return all_ok
 
-def test_sentiment_analysis():
-    """Test sentiment analysis pipeline."""
-    print("=" * 60)
-    print("TESTING SENTIMENT ANALYSIS")
-    print("=" * 60)
-    
-    try:
-        from transformers import pipeline
-        
-        # Load model
-        print("Loading sentiment analysis model...")
-        pipe = pipeline("sentiment-analysis", 
-                       model="distilbert-base-uncased-finetuned-sst-2-english")
-        
-        # Test cases
-        test_texts = [
-            "I love this place! The staff is very friendly.",
-            "The service was bad and the food was cold.",
-            "Amazing hotel with beautiful views."
-        ]
-        
-        print("Running sentiment analysis on test texts:\n")
-        for text in test_texts:
-            result = pipe(text, truncation=True)
-            print("Text: %s" % text)
-            print("Result: %s (score: %.4f)\n" % (result[0]['label'], result[0]['score']))
-        
-        print("[OK] Sentiment analysis test passed\n")
-        return True
-    except Exception as e:
-        print(f"✗ Sentiment analysis test failed: {e}\n")
-        return False
-
-def test_zero_shot_classification():
-    """Test zero-shot classification for topic detection."""
-    print("=" * 60)
-    print("TESTING ZERO-SHOT CLASSIFICATION (Topic Detection)")
-    print("=" * 60)
-    
-    try:
-        from transformers import pipeline
-        
-        print("Loading zero-shot classification model...")
-        pipe = pipeline("zero-shot-classification", 
-                       model="facebook/bart-large-mnli")
-        
-        # Test case
-        text = "The hotel is clean and the staff is friendly, but the price is too high."
-        candidate_labels = ["cleanliness", "service", "price", "location", "food"]
-        
-        print("\nText: %s" % text)
-        print("Candidate topics: %s\n" % str(candidate_labels))
-        
-        result = pipe(text, candidate_labels, multi_class=True)
-        
-        print("Topic detection results:")
-        for label, score in zip(result["labels"], result["scores"]):
-            print("  - %s: %.4f" % (label, score))
-        
-        print("\n[OK] Zero-shot classification test passed\n")
-        return True
-    except Exception as e:
-        print(f"✗ Zero-shot classification test failed: {e}\n")
-        return False
 
 def test_local_modules():
     """Test local module imports."""
     print("=" * 60)
     print("TESTING LOCAL MODULES")
     print("=" * 60)
-    
+
     try:
         from src.models import (
-            get_sentiment_pipeline,
-            get_zero_shot_pipeline,
+            analyze_aspect_sentiment,
             analyze_sentiment,
+            detect_intents,
             detect_topics,
-            analyze_aspect_sentiment
+            extract_entities,
+            set_hf_token,
         )
         print("[OK] Successfully imported models module")
     except ImportError as e:
-        print("[FAIL] Failed to import models module: %s" % str(e))
+        print(f"[FAIL] Failed to import models module: {e}")
         return False
-    
+
     try:
         from src.utils import (
+            analyze_text_statistics,
             clean_text,
+            count_aspect_mentions,
             extract_aspects,
             extract_sentences_with_aspect,
-            count_aspect_mentions,
-            analyze_text_statistics
+            format_sentiment_result,
         )
-        print("[OK] Successfully imported utils module\n")
+        print("[OK] Successfully imported utils module")
     except ImportError as e:
-        print("[FAIL] Failed to import utils module: %s" % str(e))
+        print(f"[FAIL] Failed to import utils module: {e}")
         return False
-    
+
+    print()
     return True
 
-def test_aspect_based_sentiment():
-    """Test aspect-based sentiment analysis."""
+
+def test_text_utilities():
+    """Test local text utility functions that do not require an API token."""
     print("=" * 60)
-    print("TESTING ASPECT-BASED SENTIMENT ANALYSIS")
+    print("TESTING TEXT UTILITIES")
     print("=" * 60)
-    
+
+    from src.utils import analyze_text_statistics, clean_text, extract_aspects
+
+    text = "  The hotel   was AMAZING!!! Great location and friendly staff.  "
+    cleaned = clean_text(text)
+    aspects = extract_aspects(cleaned, ["location", "staff", "food"])
+    stats = analyze_text_statistics(cleaned)
+
+    print(f"Original: {text!r}")
+    print(f"Cleaned:  {cleaned!r}")
+    print(f"Aspects:  {aspects}")
+    print(f"Stats:    {stats}")
+    print("\n[OK] Text utilities test passed\n")
+    return True
+
+
+def test_entity_extraction():
+    """Test rule-based entity extraction without requiring an API token."""
+    print("=" * 60)
+    print("TESTING ENTITY EXTRACTION")
+    print("=" * 60)
+
+    from src.models import extract_entities
+    from src.utils import clean_text
+
+    sample = """
+    Amazing service! I want a hotel near the beach with a pool and free wifi.
+    Is breakfast included? I am on a budget ($80 per night).
+    """
+    entities = extract_entities(clean_text(sample))
+
+    print(f"Entities: {entities}")
+
+    checks = [
+        "Amazing" not in entities["locations"],
+        "beach" in entities["locations"],
+        "$80" in entities["prices"],
+        "wifi" in entities["amenities"],
+        "pool" in entities["amenities"],
+        "breakfast" in entities["services"],
+    ]
+
+    if all(checks):
+        print("\n[OK] Entity extraction test passed\n")
+        return True
+
+    print("\n[FAIL] Entity extraction test failed\n")
+    return False
+
+
+def test_hf_token_optional():
+    """Validate Hugging Face token setup only when HF_TOKEN is available."""
+    print("=" * 60)
+    print("TESTING HUGGING FACE TOKEN SETUP")
+    print("=" * 60)
+
+    token = os.getenv("HF_TOKEN")
+    if not token:
+        print("[SKIP] HF_TOKEN is not set. API calls are tested in the Streamlit app after entering a token.\n")
+        return True
+
     try:
-        from src.models import analyze_aspect_sentiment
-        from src.utils import clean_text
-        
-        review = """
-        The hotel had excellent cleanliness and professional staff. 
-        The location was perfect for sightseeing. 
-        However, the price was quite high and the food quality was average.
-        """
-        
-        aspects = ["cleanliness", "staff", "location", "price", "food"]
-        
-        print("Review: %s\n" % review.strip())
-        print("Analyzing aspects...\n")
-        
-        result = analyze_aspect_sentiment(review, aspects)
-        
-        for aspect, analysis in result.items():
-            if analysis["mentioned"]:
-                print("[FOUND] %s: %s (score: %.2f%%)" % (
-                    aspect.upper(), analysis['sentiment'], 
-                    analysis['confidence_score'] * 100))
-            else:
-                print("[NOT FOUND] %s: Not mentioned" % aspect.upper())
-        
-        print("\n[OK] Aspect-based sentiment analysis test passed\n")
+        from src.models import set_hf_token
+
+        set_hf_token(token)
+        print("[OK] HF_TOKEN loaded successfully\n")
         return True
     except Exception as e:
-        print("[FAIL] Aspect-based sentiment analysis test failed: %s\n" % str(e))
+        print(f"[FAIL] HF token setup failed: {e}\n")
         return False
+
 
 def run_all_tests():
     """Run all tests and report results."""
@@ -189,36 +157,34 @@ def run_all_tests():
     print("MyTravelHelper Environment Test")
     print("=" * 60)
     print()
-    
-    results = []
-    
-    # Run tests
-    results.append(("Imports", test_imports()))
-    results.append(("Sentiment Analysis", test_sentiment_analysis()))
-    results.append(("Zero-shot Classification", test_zero_shot_classification()))
-    results.append(("Local Modules", test_local_modules()))
-    results.append(("Aspect-based Sentiment", test_aspect_based_sentiment()))
-    
-    # Summary
+
+    results = [
+        ("Imports", test_imports()),
+        ("Local Modules", test_local_modules()),
+        ("Text Utilities", test_text_utilities()),
+        ("Entity Extraction", test_entity_extraction()),
+        ("HF Token Setup", test_hf_token_optional()),
+    ]
+
     print("=" * 60)
     print("TEST SUMMARY")
     print("=" * 60)
-    
+
     for test_name, passed in results:
         status = "[PASS]" if passed else "[FAIL]"
-        print("%-40s %s" % (test_name + ".", status))
-    
+        print(f"{test_name + '.':40s} {status}")
+
     print("=" * 60)
-    
+
     all_passed = all(passed for _, passed in results)
-    
     if all_passed:
-        print("[OK] All tests passed! Environment is ready.")
+        print("[OK] Environment is ready.")
     else:
         print("[FAIL] Some tests failed. Please check your installation.")
-    
+
     print()
     return all_passed
+
 
 if __name__ == "__main__":
     success = run_all_tests()

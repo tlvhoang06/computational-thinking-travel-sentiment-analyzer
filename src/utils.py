@@ -23,8 +23,8 @@ def clean_text(text):
     text = re.sub(r"\s+", " ", text)
     # Remove leading/trailing spaces
     text = text.strip()
-    # Remove extra punctuation
-    text = re.sub(r'[^\w\s.,!?-]', '', text)
+    # Remove extra punctuation but keep currency markers used by entity extraction
+    text = re.sub(r'[^\w\s.,!?$-]', '', text)
     return text
 
 def extract_aspects(review, aspects):

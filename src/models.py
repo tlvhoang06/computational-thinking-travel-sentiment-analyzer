@@ -213,3 +213,127 @@ def analyze_aspect_sentiment(text, aspects):
         }
     
     return results
+
+
+def detect_intents(text):
+    """
+    Detect user intents in travel review using zero-shot classification.
+    Identifies common user intents (search, compare, recommend, complain, etc.).
+
+    Returns a dict with detected intents and scores.
+    """
+    try:
+        client = get_hf_client()
+        text_truncated = text[:512] if len(text) > 512 else text
+
+        candidate_intents = [
+            "seeking accommodation",
+            "comparing prices",
+            "finding attractions",
+            "asking for recommendations",
+            "complaining about service",
+            "praising service",
+            "requesting information"
+        ]
+
+        result = client.zero_shot_classification(
+            text=text_truncated,
+            candidate_labels=candidate_intents,
+            model="facebook/bart-large-mnli"
+        )
+
+        if isinstance(result, list) and len(result) > 0:
+            result = result[0]
+
+        labels = result.get("labels") or result.get("label")
+        scores = result.get("scores") or result.get("score")
+        if not labels or not scores:
+            return {"error": "Invalid response format from API"}
+
+        if not isinstance(labels, list):
+            labels = [labels]
+        if not isinstance(scores, list):
+            scores = [scores]
+
+        intents = {label: round(float(score), 4) for label, score in zip(labels, scores)}
+        primary = max(intents.items(), key=lambda x: x[1]) if intents else (None, 0)
+
+        return {"intents": intents, "primary_intent": primary[0], "primary_score": primary[1]}
+    except Exception as e:
+        return {"error": f"Intent detection failed: {str(e)}"}
+
+
+def extract_entities(text):
+    """
+    Lightweight entity extraction from review text (rule-based).
+    Returns basic entities: locations, prices, amenities, services, room_types.
+    """
+    import re
+
+    try:
+        entities = {"locations": [], "prices": [], "amenities": [], "services": [], "room_types": []}
+
+        # Prices
+        price_pattern = r"\$[\d,]+\.?\d*|€[\d,]+\.?\d*|VND\s*[\d,]+"
+        prices = re.findall(price_pattern, text, re.IGNORECASE)
+        entities["prices"] = list(dict.fromkeys(prices))
+
+        # Amenities
+        amenities_list = ["wifi", "parking", "pool", "gym", "spa", "restaurant", "bar", "balcony", "kitchen", "air conditioning", "ac", "heating", "tv", "safe", "elevator", "laundry"]
+        for amenity in amenities_list:
+            if re.search(r"\b" + re.escape(amenity) + r"\b", text, re.IGNORECASE):
+                entities["amenities"].append(amenity)
+
+        # Services
+        services_list = ["breakfast", "checkout", "checkin", "reception", "housekeeping", "room service", "concierge", "front desk", "delivery", "shuttle"]
+        for service in services_list:
+            if re.search(r"\b" + re.escape(service) + r"\b", text, re.IGNORECASE):
+                entities["services"].append(service)
+
+        # Room types
+        room_types = ["suite", "double", "single", "twin", "deluxe", "standard", "luxury", "economy"]
+        for room in room_types:
+            if re.search(r"\b" + re.escape(room) + r"\b", text, re.IGNORECASE):
+                entities["room_types"].append(room)
+
+        # Location heuristics:
+        # - prefer phrases with location prepositions ("near the beach", "from Paris")
+        # - keep multi-word proper nouns ("Ho Chi Minh City")
+        # - avoid treating sentence-start adjectives like "Amazing" as locations
+        location_terms = (
+            "airport", "attraction", "attractions", "beach", "center", "centre",
+            "city", "downtown", "market", "museum", "station", "street"
+        )
+        context_pattern = (
+            r"\b(?:near|nearby|in|at|from|to|around|by|beside|close to|far from|away from)\s+"
+            r"(?:the\s+)?"
+            r"([A-Za-z][A-Za-z\s-]{1,50})"
+        )
+        context_locations = []
+        for match in re.finditer(context_pattern, text, re.IGNORECASE):
+            phrase = re.split(r"[,.!?;:]", match.group(1), maxsplit=1)[0].strip()
+            words = phrase.split()
+            if not words:
+                continue
+
+            if words[0].lower() in ("a", "an", "the"):
+                words = words[1:]
+
+            if words and words[0].lower() in location_terms:
+                context_locations.append(words[0].lower())
+            elif len(words) >= 2:
+                context_locations.append(" ".join(words[:4]).strip())
+            elif words[0][0].isupper():
+                context_locations.append(words[0])
+
+        proper_noun_locations = re.findall(
+            r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+\b",
+            text
+        )
+
+        locations = context_locations + proper_noun_locations
+        entities["locations"] = list(dict.fromkeys(locations))[:8]
+
+        return entities
+    except Exception as e:
+        return {"error": f"Entity extraction failed: {str(e)}"}

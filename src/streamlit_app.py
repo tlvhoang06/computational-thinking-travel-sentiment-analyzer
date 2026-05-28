@@ -11,6 +11,7 @@ from models import (
     detect_topics,
     analyze_aspect_sentiment
 )
+from models import detect_intents, extract_entities
 from utils import (
     clean_text,
     extract_aspects,
@@ -126,9 +127,10 @@ if analyze_button:
         st.subheader("📈 Analysis Results")
         
         # Create tabs for different analyses
-        tab1, tab2, tab3, tab4 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "Overall Sentiment",
             "Aspect-Based Analysis",
+            "Intent & Entities",
             "Topic Detection",
             "Text Statistics"
         ])
@@ -143,7 +145,7 @@ if analyze_button:
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        sentiment_color = "🟢" if sentiment["label"] == "POSITIVE" else "🔴"
+                        sentiment_color = "🟢" if sentiment["label"] == "POSITIVE" else ""
                         st.metric(
                             "Sentiment",
                             f"{sentiment_color} {sentiment['label']}"
@@ -222,8 +224,55 @@ if analyze_button:
             else:
                 st.warning("Please select at least one aspect to analyze")
         
-        # Tab 3: Topic Detection
+        # Tab 3: Intent Classification & Entity Extraction
         with tab3:
+            st.write("### Intent Classification & Entity Extraction")
+
+            try:
+                intents = detect_intents(cleaned_review)
+                entities = extract_entities(cleaned_review)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("Detected Intents")
+                    if "error" not in intents and intents.get("primary_intent"):
+                        st.metric("Primary Intent", intents["primary_intent"], f"{intents['primary_score']:.0%}")
+                        if intents.get("intents"):
+                            st.write("**All detected intents:**")
+                            for intent, score in intents["intents"].items():
+                                st.caption(f"• {intent}: {score:.0%}")
+                    else:
+                        st.info("No clear intent detected")
+
+                with col2:
+                    st.subheader("🏷️ Extracted Entities")
+                    if "error" not in entities:
+                        found_entities = False
+                        if entities.get("prices"):
+                            found_entities = True
+                            st.write(f"**💰 Prices:** {', '.join(entities['prices'])}")
+                        if entities.get("amenities"):
+                            found_entities = True
+                            st.write(f"**🏨 Amenities:** {', '.join(entities['amenities'])}")
+                        if entities.get("services"):
+                            found_entities = True
+                            st.write(f"**🔧 Services:** {', '.join(entities['services'])}")
+                        if entities.get("room_types"):
+                            found_entities = True
+                            st.write(f"**🛏️ Room Types:** {', '.join(entities['room_types'])}")
+                        if entities.get("locations"):
+                            found_entities = True
+                            st.write(f"**📍 Locations:** {', '.join(entities['locations'][:3])}")
+                        if not found_entities:
+                            st.info("No entities found")
+                    else:
+                        st.error(entities["error"])
+
+            except Exception as e:
+                st.error(f"Error during intent/entity analysis: {str(e)}")
+
+        # Tab 4: Topic Detection
+        with tab4:
             st.write("### Topic Detection")
             
             try:
@@ -258,8 +307,8 @@ if analyze_button:
             except Exception as e:
                 st.error(f"Error during topic detection: {str(e)}")
         
-        # Tab 4: Text Statistics
-        with tab4:
+        # Tab 5: Text Statistics
+        with tab5:
             st.write("### Text Statistics")
             
             try:
